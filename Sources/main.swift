@@ -55,7 +55,7 @@ print("Used RAM: \(String(format: "%.1f", usedMemoryGB)) GB (\(Int(usagePercent)
 func getTopProcesses() {
     let task = Process()
     task.launchPath = "/bin/ps"
-    task.arguments = ["-axo", "comm,rss", "-r"]
+    task.arguments = ["-axo", "comm,rss"]
 
     let pipe = Pipe()
     task.standardOutput = pipe
@@ -64,21 +64,32 @@ func getTopProcesses() {
     let data = pipe.fileHandleForReading.readDataToEndOfFile()
     guard let output = String(data: data, encoding: .utf8) else { return }
 
-    let lines = output.components(separatedBy: "\n").dropFirst().prefix(5)
+    var processes: [(name: String, memoryGB: Double)] = []
 
-    print("\nTop Memory Consumers:")
+    let lines = output.components(separatedBy: "\n").dropFirst()
 
     for line in lines {
         let parts = line.split(separator: " ", omittingEmptySubsequences: true)
         if parts.count >= 2 {
-            let command = parts[0]
+            let name = String(parts[0])
+
             if let rss = Double(parts.last!) {
-                let memoryGB = rss / 1_048_576
-                print("- \(command) – \(String(format: "%.2f", memoryGB)) GB")
+                let memoryGB = rss / 1_048_576 // KB → GB
+                processes.append((name, memoryGB))
             }
         }
     }
+
+    // 🔥 Proper Sorting
+    processes.sort { $0.memoryGB > $1.memoryGB }
+
+    print("\nTop Memory Consumers:")
+
+    for process in processes.prefix(5) {
+        print("- \(process.name) – \(String(format: "%.2f", process.memoryGB)) GB")
+    }
 }
+
 
 getTopProcesses()
 
