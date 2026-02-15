@@ -55,40 +55,59 @@ print("Used RAM: \(String(format: "%.1f", usedMemoryGB)) GB (\(Int(usagePercent)
 func getTopProcesses() {
     let task = Process()
     task.launchPath = "/bin/ps"
-    task.arguments = ["-axo", "comm,rss"]
+    task.arguments = ["-axo", "rss=,command="]
+
+    // 👇 THIS is where environment variable goes
+    task.environment = ["COLUMNS": "1000"]
 
     let pipe = Pipe()
     task.standardOutput = pipe
-    task.launch()
+
+    do {
+        try task.run()
+    } catch {
+        print("Failed to run ps command")
+        return
+    }
 
     let data = pipe.fileHandleForReading.readDataToEndOfFile()
     guard let output = String(data: data, encoding: .utf8) else { return }
 
     var processes: [(name: String, memoryGB: Double)] = []
 
-    let lines = output.components(separatedBy: "\n").dropFirst()
+    let lines = output.components(separatedBy: "\n")
 
     for line in lines {
-        let parts = line.split(separator: " ", omittingEmptySubsequences: true)
-        if parts.count >= 2 {
-            let name = String(parts[0])
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        if trimmed.isEmpty { continue }
 
-            if let rss = Double(parts.last!) {
-                let memoryGB = rss / 1_048_576 // KB → GB
-                processes.append((name, memoryGB))
-            }
-        }
+        // Split once: first value is RSS, rest is command
+        let parts = trimmed.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
+        if parts.count < 2 { continue }
+
+        guard let rss = Double(parts[0]) else { continue }
+
+        let memoryGB = rss / 1_048_576
+        if memoryGB < 0.05 { continue } // ignore small processes
+
+        let fullCommand = String(parts[1])
+
+        let appName = URL(fileURLWithPath: fullCommand)
+            .deletingPathExtension()
+            .lastPathComponent
+
+        processes.append((appName, memoryGB))
     }
 
-    // 🔥 Proper Sorting
     processes.sort { $0.memoryGB > $1.memoryGB }
 
     print("\nTop Memory Consumers:")
-
     for process in processes.prefix(5) {
         print("- \(process.name) – \(String(format: "%.2f", process.memoryGB)) GB")
     }
 }
+
+
 
 
 getTopProcesses()
